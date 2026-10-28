@@ -3,43 +3,60 @@ import pandas as pd
 df = pd.read_csv("/Users/marcotolol/binus/binus/AOL_DB/online_retail_data_with_names.csv")
 jumlah_awal = len(df)
 
-# StockCode kosong atau bukan produk asli (POST, BANK CHARGES, dll)
-df = df.dropna(subset=["StockCode"])
-df = df[df["StockCode"].astype(str).str.contains(r"\d")]
 
-# Missing value
-df = df.dropna(subset=["Customer ID"])
-df = df.dropna(subset=["Description"])
+# 1. Hapus data kosong
+df = df.dropna(subset=["StockCode", "Customer ID", "Description"])
 
-# Duplikat persis
+
+# 2. Hapus StockCode yang bukan produk (POST, BANK CHARGES, dll)
+punya_angka = df["StockCode"].astype(str).str.contains(r"\d")
+df = df[punya_angka]
+
+
+# 3. Hapus duplikat persis
 df = df.drop_duplicates(keep="first")
 
-# Quantity negatif dihapus, kecuali invoice cancelled (prefix "C")
-invoice_cancelled = df["Invoice"].astype(str).str.startswith("C")
+
+# 4. Hapus quantity negatif, kecuali invoice cancelled (diawali "C")
 quantity_negatif = df["Quantity"] < 0
-df = df[~(quantity_negatif & ~invoice_cancelled)]
+invoice_cancelled = df["Invoice"].astype(str).str.startswith("C")
+harus_dihapus = quantity_negatif & ~invoice_cancelled
+df = df[~harus_dihapus]
 
-# Invoice tanpa angka
-df = df[df["Invoice"].astype(str).str.contains(r"\d")]
 
-# Harga 0 atau negatif
-df = df[df["Price"] > 0]
+# 5. Hapus invoice yang tidak mengandung angka
+invoice_punya_angka = df["Invoice"].astype(str).str.contains(r"\d")
+df = df[invoice_punya_angka]
 
-# Customer dengan lebih dari satu negara
-cust_country_count = df.groupby("Customer ID")["Country"].nunique()
-customer_multi_country = cust_country_count[cust_country_count > 1].index
-df = df[~df["Customer ID"].isin(customer_multi_country)]
 
-# Duplikat Invoice + StockCode
+# 6. Hapus harga 0 atau negatif
+harga_valid = df["Price"] > 0
+df = df[harga_valid]
+
+
+# 7. Hapus customer yang punya lebih dari satu negara
+jumlah_negara = df.groupby("Customer ID")["Country"].nunique()
+customer_bermasalah = jumlah_negara[jumlah_negara > 1].index
+df = df[~df["Customer ID"].isin(customer_bermasalah)]
+
+
+# 8. Hapus duplikat Invoice + StockCode
 df = df.drop_duplicates(subset=["Invoice", "StockCode"], keep="first")
 
-# Standardisasi deskripsi (paling sering) dan harga (paling rendah)
-most_common_desc = df.groupby("StockCode")["Description"].agg(lambda x: x.value_counts().idxmax())
-df["Description"] = df["StockCode"].map(most_common_desc)
 
+# 9. Standardisasi Description (paling sering muncul)
+deskripsi_terbaik = df.groupby("StockCode")["Description"].agg(
+    lambda x: x.value_counts().idxmax()
+)
+df["Description"] = df["StockCode"].map(deskripsi_terbaik)
+
+
+# 10. Standardisasi Price (paling rendah)
 harga_terendah = df.groupby("StockCode")["Price"].min()
 df["Price"] = df["StockCode"].map(harga_terendah)
 
+
+# Hasil
 jumlah_akhir = len(df)
 print("Data awal:", jumlah_awal)
 print("Data yang terhapus:", jumlah_awal - jumlah_akhir)
